@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>繩波模擬動畫 (精準物理版)</title>
+    <style>
+        /* === 樣式保持原本的紫色漸層風格 === */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            color: white;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            max-width: 1200px;
+            width: 100%;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5rem;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .simulation-area {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 30px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        #canvas {
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 10px;
+            background: linear-gradient(to bottom, #1a1a2e, #16213e);
+            cursor: crosshair;
+            display: block;
+            margin: 0 auto;
+        }
+
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .control-group {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 20px;
+            border-radius: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .control-group h3 {
+            margin-bottom: 15px;
+            color: #ffd700;
+            font-size: 1.2rem;
+        }
+
+        .control-item { margin-bottom: 15px; }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: rgba(255, 255, 255, 0.3);
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #ffd700;
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        select, button {
+            width: 100%;
+            padding: 10px;
+            border: none;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        button {
+            background: linear-gradient(45deg, #ff6b6b, #ee5a24);
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        button:hover {
+            background: linear-gradient(45deg, #ee5a24, #ff6b6b);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        select option { background: #333; color: white; }
+
+        /* 數值顯示樣式優化 */
+        .value-display {
+            font-size: 14px;
+            color: #ffd700;
+            margin-top: 4px;
+            font-family: 'Consolas', 'Monaco', monospace; /* 使用等寬字體讓數字對齊 */
+            text-align: right;
+        }
+
+        .wave-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .info-panel {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+            border-left: 4px solid #ffd700;
+        }
+
+        .info-panel h4 { color: #ffd700; margin-bottom: 10px; }
+        .info-panel p { font-size: 14px; line-height: 1.5; opacity: 0.9; }
+
+        select#boundaryType {
+            border: 1px solid #ffd700;
+            background: rgba(255, 215, 0, 0.1);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌊 繩波模擬動畫 <span style="font-size: 0.5em; opacity: 0.8">(物理修正版)</span></h1>
+        
+        <div class="simulation-area">
+            <canvas id="canvas" width="800" height="300"></canvas>
+        </div>
+
+        <div class="controls">
+            <div class="control-group">
+                <h3>🎛️ 波動參數</h3>
+                <div class="control-item">
+                    <label for="amplitude">振幅 (Amplitude)</label>
+                    <input type="range" id="amplitude" min="10" max="80" value="40">
+                    <div class="value-display" id="amplitudeValue">40 cm</div>
+                </div>
+                <div class="control-item">
+                    <label for="frequency">頻率 (Frequency)</label>
+                    <input type="range" id="frequency" min="0.5" max="5" step="0.1" value="1.5">
+                    <div class="value-display" id="frequencyValue">1.50 Hz</div>
+                </div>
+                <div class="control-item">
+                    <label for="waveSpeed">波速 (Wave Speed)</label> 
+                    <input type="range" id="waveSpeed" min="50" max="300" value="150">
+                    <div class="value-display" id="waveSpeedValue">150 cm/s</div>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <h3>🔧 物理設定</h3>
+                <div class="control-item">
+                    <label for="boundaryType" style="color:#ffd700">邊界條件 (Boundary)</label>
+                    <select id="boundaryType">
+                        <option value="absorbing">吸收端 (無反射)</option>
+                        <option value="fixed">固定端 (有反射)</option>
+                    </select>
+                </div>
+                <div class="control-item">
+                    <label for="damping">阻尼 (Damping)</label>
+                    <input type="range" id="damping" min="0" max="0.05" step="0.001" value="0.005">
+                    <div class="value-display" id="dampingValue">0.005</div>
+                </div>
+                <div class="control-item">
+                    <label for="waveType">波形類型</label>
+                    <select id="waveType">
+                        <option value="sine">正弦波 (Sine)</option>
+                        <option value="pulse">脈衝波 (Pulse)</option>
+                        <option value="square">方波 (Square)</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <h3>🎮 互動控制</h3>
+                <div class="control-item">
+                    <p style="margin-bottom: 15px; font-size: 14px; opacity: 0.9;">
+                        🖱️ 拖拽右端綠點控制繩子<br>
+                        👆 點擊繩子產生擾動
+                    </p>
+                </div>
+                <div class="wave-buttons">
+                    <button id="startWave">開始波動</button>
+                    <button id="stopWave">停止波動</button>
+                </div>
+                <button id="generatePulse" style="margin-top: 10px;">產生單一脈衝</button>
+                <button id="resetRope" style="margin-top: 10px; background: linear-gradient(45deg, #4ecdc4, #556270);">重置繩子</button>
+            </div>
+        </div>
+
+        <div class="info-panel">
+            <h4>📚 物理公式驗證</h4>
+            <p>
+                • <strong>波速公式</strong>：v = f × λ (波速 = 頻率 × 波長)。<br>
+                • <strong>模擬精度</strong>：目前設定 1px = 1cm。若波速設為 150 cm/s，波峰移動 150 像素確實需要 1 秒。<br>
+                • <strong>穩定性</strong>：使用子步長 (Sub-stepping) 技術，符合 CFL 條件 (v·dt/dx < 1)，確保數值精準。
+            </p>
+        </div>
+    </div>
+
+    <script>
+        class WaveSimulation {
+            constructor() {
+                this.canvas = document.getElementById('canvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.width = this.canvas.width;
+                this.height = this.canvas.height;
+                
+                // 繩子參數 (Assuming 1 unit = 1 cm for visualization)
+                this.numPoints = 200;
+                this.points = [];
+                this.velocities = [];
+                this.ropeLength = this.width - 100; // 實際繩長 700px (700cm)
+                this.ropeY = this.height / 2;
+                
+                // 波動參數
+                this.amplitude = 40;
+                this.frequency = 1.5;
+                this.waveSpeed = 150; // cm/s (pixels per second)
+                this.damping = 0.005;
+                this.waveType = 'sine';
+                this.boundaryType = 'absorbing';
+                
+                // 動畫參數
+                this.time = 0;
+                this.isRunning = false;
+                
+                // 滑鼠控制
+                this.isMouseDown = false;
+                this.mouseY = this.ropeY;
+                
+                this.initializeRope();
+                this.setupEventListeners();
+                this.setupControls();
+                this.animate();
+            }
+            
+            initializeRope() {
+                this.points = new Array(this.numPoints).fill(0);
+                this.velocities = new Array(this.numPoints).fill(0);
+            }
+            
+            setupEventListeners() {
+                this.canvas.addEventListener('mousedown', (e) => {
+                    const rect = this.canvas.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const endX = 50 + this.ropeLength;
+                    
+                    if (Math.abs(x - endX) < 30) {
+                        this.isMouseDown = true;
+                        this.canvas.style.cursor = 'grabbing';
+                    }
+                });
+                
+                this.canvas.addEventListener('mousemove', (e) => {
+                    const rect = this.canvas.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const y = e.clientY - rect.top;
+                    const endX = 50 + this.ropeLength;
+                    
+                    if (Math.abs(x - endX) < 30) {
+                        this.canvas.style.cursor = 'grab';
+                    } else {
+                        this.canvas.style.cursor = 'crosshair';
+                    }
+                    
+                    if (this.isMouseDown) {
+                        this.mouseY = Math.max(50, Math.min(this.height - 50, y));
+                    }
+                });
+                
+                window.addEventListener('mouseup', () => {
+                    this.isMouseDown = false;
+                    this.canvas.style.cursor = 'crosshair';
+                });
+                
+                this.canvas.addEventListener('click', (e) => {
+                    if (this.isMouseDown) return;
+                    const rect = this.canvas.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const endX = 50 + this.ropeLength;
+                    
+                    if (Math.abs(x - endX) < 30) return;
+                    
+                    const pointIndex = Math.floor((x - 50) / this.ropeLength * this.numPoints);
+                    if (pointIndex >= 0 && pointIndex < this.numPoints) {
+                        this.generateDisturbance(pointIndex, this.amplitude);
+                    }
+                });
+                
+                document.getElementById('startWave').addEventListener('click', () => this.isRunning = true);
+                document.getElementById('stopWave').addEventListener('click', () => this.isRunning = false);
+                document.getElementById('generatePulse').addEventListener('click', () => this.generatePulse());
+                document.getElementById('resetRope').addEventListener('click', () => this.resetRope());
+            }
+            
+            setupControls() {
+                // Helper function to update value display with units
+                const bindControl = (id, prop, suffix = '', decimalPlaces = 0) => {
+                    const el = document.getElementById(id);
+                    const valDisplay = document.getElementById(id + 'Value');
+                    el.addEventListener('input', (e) => {
+                        this[prop] = parseFloat(e.target.value);
+                        if(valDisplay) {
+                            // Format the number nicely
+                            const formattedValue = decimalPlaces > 0 ? this[prop].toFixed(decimalPlaces) : this[prop];
+                            valDisplay.textContent = formattedValue + suffix;
+                        }
+                    });
+                };
+
+                bindControl('amplitude', 'amplitude', ' cm', 0);
+                bindControl('frequency', 'frequency', ' Hz', 2);
+                bindControl('waveSpeed', 'waveSpeed', ' cm/s', 0);
+                bindControl('damping', 'damping', '', 3); // Damping has no unit
+                
+                document.getElementById('waveType').addEventListener('change', (e) => this.waveType = e.target.value);
+                document.getElementById('boundaryType').addEventListener('change', (e) => this.boundaryType = e.target.value);
+            }
+            
+            generateWaveValue(t) {
+                const period = 1 / this.frequency;
+                const phase = (t % period) / period; 
+
+                switch (this.waveType) {
+                    case 'sine':
+                        return this.amplitude * Math.sin(2 * Math.PI * this.frequency * t);
+                    
+                    case 'pulse':
+                        // Smooth Half-Sine Pulse
+                        if (phase < 0.4) {
+                            const localPhase = (phase / 0.4) * Math.PI;
+                            return this.amplitude * Math.sin(localPhase);
+                        }
+                        return 0;
+                    
+                    case 'square':
+                        // Smooth Tanh Square Wave
+                        return this.amplitude * Math.tanh(Math.sin(2 * Math.PI * this.frequency * t) * 15);
+                    
+                    default:
+                        return 0;
+                }
+            }
+            
+            generatePulse() {
+                const width = 10;
+                const center = Math.floor(this.numPoints * 0.5);
+                
+                for (let i = -width; i <= width; i++) {
+                    const idx = center + i;
+                    if (idx >= 0 && idx < this.numPoints) {
+                        const val = this.amplitude * Math.exp(-(i*i) / (width*2));
+                        this.points[idx] += val;
+                    }
+                }
+            }
+            
+            generateDisturbance(index, amp) {
+                const width = 5;
+                for (let i = -width; i <= width; i++) {
+                    const targetIndex = index + i;
+                    if (targetIndex >= 0 && targetIndex < this.numPoints) {
+                        const factor = Math.exp(-Math.abs(i) * 0.5);
+                        this.points[targetIndex] += amp * factor;
+                    }
+                }
+            }
+            
+            resetRope() {
+                this.initializeRope();
+                this.mouseY = this.ropeY;
+                this.time = 0;
+            }
+            
+            updatePhysics(dt) {
+                const dx = this.ropeLength / this.numPoints;
+                
+                // === 物理修正 ===
+                // 這裡直接使用 waveSpeed^2，不乘任何係數。
+                // 這樣 waveSpeed=150 就代表 150 px/s (cm/s)
+                const v_squared = this.waveSpeed * this.waveSpeed; 
+                
+                // 子步長 (Sub-stepping)
+                // 由於移除了 0.6 的係數，為了保證數值穩定性 (Courant 條件)，
+                // 我們將步數設為 5，確保 v*dt/dx < 1
+                const steps = 5;
+                const subDt = dt / steps;
+
+                for(let s=0; s<steps; s++) {
+                    const newPoints = [...this.points];
+                    
+                    for (let i = 1; i < this.numPoints - 1; i++) {
+                        const curvature = (this.points[i + 1] - 2 * this.points[i] + this.points[i - 1]) / (dx * dx);
+                        const accel = v_squared * curvature;
+                        
+                        this.velocities[i] += accel * subDt;
+                        this.velocities[i] *= (1 - this.damping);
+
+                        // 吸收端處理
+                        if (this.boundaryType === 'absorbing') {
+                            if (i < 25) {
+                                const absorbFactor = (25 - i) / 25; 
+                                this.velocities[i] *= (1 - absorbFactor * 0.3);
+                            }
+                        }
+                        
+                        newPoints[i] += this.velocities[i] * subDt;
+                    }
+                    
+                    newPoints[0] = 0; 
+                    this.velocities[0] = 0;
+                    
+                    const last = this.numPoints - 1;
+                    if (this.isRunning && !this.isMouseDown) {
+                        newPoints[last] = this.generateWaveValue(this.time + s * subDt);
+                    } else {
+                        if(!this.isMouseDown) {
+                             newPoints[last] += (0 - newPoints[last]) * 0.1;
+                        } else {
+                             newPoints[last] = this.mouseY - this.ropeY;
+                        }
+                    }
+                    
+                    this.points = newPoints;
+                }
+            }
+            
+            draw() {
+                this.ctx.clearRect(0, 0, this.width, this.height);
+                
+                // 繪製背景
+                const bgGradient = this.ctx.createLinearGradient(0, 0, 0, this.height);
+                bgGradient.addColorStop(0, '#1a1a2e');
+                bgGradient.addColorStop(1, '#16213e');
+                this.ctx.fillStyle = bgGradient;
+                this.ctx.fillRect(0, 0, this.width, this.height);
+                
+                this.drawGrid();
+                this.drawRope();
+                this.drawFixedPoints();
+            }
+            
+            drawGrid() {
+                this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+                this.ctx.lineWidth = 1;
+                for (let y = 0; y < this.height; y += 30) {
+                    this.ctx.beginPath(); this.ctx.moveTo(0, y); this.ctx.lineTo(this.width, y); this.ctx.stroke();
+                }
+                for (let x = 0; x < this.width; x += 40) {
+                    this.ctx.beginPath(); this.ctx.moveTo(x, 0); this.ctx.lineTo(x, this.height); this.ctx.stroke();
+                }
+            }
+            
+            drawRope() {
+                const startX = 50;
+                const dx = this.ropeLength / this.numPoints;
+                
+                this.ctx.lineWidth = 3;
+                this.ctx.lineCap = 'round';
+                this.ctx.lineJoin = 'round';
+                
+                const gradient = this.ctx.createLinearGradient(startX, 0, startX + this.ropeLength, 0);
+                
+                if (this.boundaryType === 'absorbing') {
+                    gradient.addColorStop(0, 'rgba(100,100,100,0.3)');
+                    gradient.addColorStop(0.1, '#00ccff');
+                } else {
+                    gradient.addColorStop(0, '#ffaa00');
+                    gradient.addColorStop(0.1, '#00ff88');
+                }
+                gradient.addColorStop(1, '#ff6b6b');
+                this.ctx.strokeStyle = gradient;
+                
+                this.ctx.beginPath();
+                this.ctx.moveTo(startX, this.ropeY + this.points[0]);
+                for (let i = 1; i < this.numPoints; i++) {
+                    this.ctx.lineTo(startX + i * dx, this.ropeY + this.points[i]);
+                }
+                this.ctx.stroke();
+                
+                this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                for (let i = 0; i < this.numPoints; i += 10) {
+                    const x = startX + i * dx;
+                    const y = this.ropeY + this.points[i];
+                    this.ctx.beginPath(); this.ctx.arc(x, y, 2, 0, 2 * Math.PI); this.ctx.fill();
+                }
+            }
+            
+            drawFixedPoints() {
+                const startX = 50;
+                const endX = startX + this.ropeLength;
+                
+                // Left Point
+                this.ctx.fillStyle = this.boundaryType === 'absorbing' ? '#666' : '#ffd700';
+                this.ctx.strokeStyle = this.boundaryType === 'absorbing' ? '#888' : '#ffaa00';
+                this.ctx.lineWidth = 2;
+                this.ctx.beginPath();
+                this.ctx.arc(startX, this.ropeY + this.points[0], 10, 0, 2 * Math.PI);
+                this.ctx.fill();
+                this.ctx.stroke();
+                
+                this.ctx.fillStyle = 'white';
+                this.ctx.font = 'bold 12px Arial';
+                const label = this.boundaryType === 'absorbing' ? '吸收' : '固定';
+                this.ctx.fillText(label, startX - 15, this.ropeY - 15);
+                
+                // Right Point
+                const rightEndY = this.ropeY + this.points[this.numPoints - 1];
+                this.ctx.fillStyle = this.isMouseDown ? '#ff6b6b' : (this.isRunning ? '#ffaa00' : '#00ff88');
+                this.ctx.strokeStyle = this.isMouseDown ? '#cc4444' : (this.isRunning ? '#cc8800' : '#00cc66');
+                this.ctx.beginPath();
+                this.ctx.arc(endX, rightEndY, 12, 0, 2 * Math.PI);
+                this.ctx.fill();
+                this.ctx.stroke();
+            }
+            
+            animate() {
+                const dt = 0.016; // 16ms per frame
+                this.updatePhysics(dt);
+                this.draw();
+                if (this.isRunning && !this.isMouseDown) {
+                    this.time += dt;
+                }
+                requestAnimationFrame(() => this.animate());
+            }
+        }
+        
+        window.onload = function() {
+            new WaveSimulation();
+        }
+    </script>
+</body>
+</html>
